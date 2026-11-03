@@ -1,87 +1,86 @@
 
 <template>
   <div id="app">
-    <h1>Employee Registration Application</h1>
+    <div class="registration-card">
+      <h1>Employee Registration</h1>
 
-    <!-- Employee details -->
-    <div class="employee-form">
-      <h2>Employee Details</h2>
+      <form @submit.prevent="registerEmployee">
 
-      <input
-        v-model="employee.name"
-        type="text"
-        placeholder="Employee Name"
-        required
-      />
+        <div class="form-group">
+          <label>Employee Code</label>
+          <input
+            type="text"
+            :value="employee.employeeCode"
+            readonly
+            placeholder="Generated during registration"
+          />
+          <small>Automatically generated</small>
+        </div>
 
-      <input
-        v-model="employee.phoneNumber"
-        type="tel"
-        placeholder="Phone Number"
-        required
-      />
+        <div class="form-group">
+          <label>Name</label>
+          <input
+            v-model.trim="employee.name"
+            type="text"
+            placeholder="Enter employee name"
+            required
+          />
+        </div>
 
-      <input
-        v-model="employee.email"
-        type="email"
-        placeholder="Email Address"
-        required
-      />
+        <div class="form-group">
+          <label>Phone Number</label>
+          <input
+            v-model.trim="employee.phoneNumber"
+            type="tel"
+            placeholder="Enter phone number"
+            required
+          />
+        </div>
 
-      <input
-        v-model="employee.employeeCode"
-        type="text"
-        placeholder="Employee Code"
-        required
-      />
+        <div class="form-group">
+          <label>Email ID</label>
+          <input
+            v-model.trim="employee.email"
+            type="email"
+            placeholder="Enter email address"
+            required
+          />
+        </div>
+
+        <div class="form-group">
+          <label>ID Card Photo</label>
+          <input
+            type="file"
+            accept="image/jpeg"
+            @change="onFileChange"
+            required
+          />
+
+          <img
+            v-if="image"
+            :src="image"
+            class="preview"
+            alt="ID card preview"
+          />
+        </div>
+
+        <button
+          type="submit"
+          :disabled="isSubmitting || !selectedFile"
+        >
+          {{ isSubmitting ? "Registering..." : "Register Employee" }}
+        </button>
+
+        <p v-if="successMessage" class="success">
+          {{ successMessage }}
+        </p>
+
+        <p v-if="errorMessage" class="error">
+          {{ errorMessage }}
+        </p>
+
+      </form>
     </div>
-
-    <!-- Image selection -->
-    <div v-if="!image">
-      <h2>Upload ID Card</h2>
-      <input type="file" accept="image/jpeg" @change="onFileChange">
-    </div>
-
-    <!-- Image preview -->
-    <div v-else>
-      <img :src="image" />
-
-      <button
-        v-if="!imageUploaded"
-        @click="removeImage"
-      >
-        Remove image
-      </button>
-
-      <button
-        v-if="!imageUploaded"
-        @click="uploadImage"
-        :disabled="isUploading"
-      >
-        {{ isUploading ? "Uploading..." : "Upload ID Card" }}
-      </button>
-    </div>
-
-    <p v-if="imageUploaded">
-      ID card uploaded successfully to S3!
-    </p>
-
-    <!-- Register employee -->
-    <button
-      v-if="imageUploaded"
-      @click="registerEmployee"
-      :disabled="isSubmitting"
-    >
-      {{ isSubmitting ? "Registering..." : "Register Employee" }}
-    </button>
-
-    <p v-if="successMessage" class="success">
-      {{ successMessage }}
-    </p>
-
-    <p v-if="errorMessage" class="error">
-      {{ errorMessage }}
-    </p>
   </div>
 </template>
 
@@ -90,247 +89,249 @@ import axios from "axios";
 
 const MAX_IMAGE_SIZE = 1000000;
 
-// Existing API: Generates S3 presigned URL
 const API_ENDPOINT =
-  'https://74ie1wykx4.execute-api.us-east-1.amazonaws.com/default/lambda1';
+  "https://74ie1wykx4.execute-api.us-east-1.amazonaws.com/default/lambda1";
 
-// New API: Saves employee details in DynamoDB
 const EMPLOYEE_API_ENDPOINT =
-  'https://24vukuy57c.execute-api.us-east-1.amazonaws.com/prod/employees';
+  "https://24vukuy57c.execute-api.us-east-1.amazonaws.com/prod/employees";
 
 export default {
-  name: 'app',
+  name: "HelloWorld",
 
   data() {
     return {
-      image: '',
-      imageUploaded: false,
-      photoFilename: '',
-
-      isUploading: false,
+      image: "",
+      selectedFile: null,
       isSubmitting: false,
-
-      successMessage: '',
-      errorMessage: '',
+      successMessage: "",
+      errorMessage: "",
 
       employee: {
-        name: '',
-        phoneNumber: '',
-        email: '',
-        employeeCode: ''
+        employeeCode: "",
+        name: "",
+        phoneNumber: "",
+        email: ""
       }
     };
   },
 
   methods: {
+    onFileChange(event) {
+      const file = event.target.files[0];
 
-    // Select an image
-    onFileChange(e) {
-      let files = e.target.files || e.dataTransfer.files;
+      this.image = "";
+      this.selectedFile = null;
+      this.errorMessage = "";
+      this.successMessage = "";
 
-      if (!files.length) return;
+      if (!file) return;
 
-      this.createImage(files[0]);
-    },
-
-    // Preview and validate image
-    createImage(file) {
-      if (file.type !== 'image/jpeg') {
-        return alert('JPG images only.');
+      if (file.type !== "image/jpeg") {
+        this.errorMessage = "Please select a JPG image.";
+        event.target.value = "";
+        return;
       }
 
       if (file.size > MAX_IMAGE_SIZE) {
-        return alert('Image must be less than 1 MB.');
+        this.errorMessage = "Image must be less than 1 MB.";
+        event.target.value = "";
+        return;
       }
 
-      let reader = new FileReader();
-
-      reader.onload = (e) => {
-        this.image = e.target.result;
-        this.imageUploaded = false;
-        this.photoFilename = '';
-        this.successMessage = '';
-        this.errorMessage = '';
-      };
-
-      reader.readAsDataURL(file);
+      this.selectedFile = file;
+      this.image = URL.createObjectURL(file);
     },
 
-    // Remove selected image
-    removeImage() {
-      this.image = '';
-      this.imageUploaded = false;
-      this.photoFilename = '';
-    },
+    async registerEmployee() {
+      if (this.isSubmitting) return;
 
-    // Upload image to S3
-    async uploadImage() {
+      this.isSubmitting = true;
+      this.errorMessage = "";
+      this.successMessage = "";
+
       try {
-        this.isUploading = true;
-        this.errorMessage = '';
+        if (
+          !this.employee.name ||
+          !this.employee.phoneNumber ||
+          !this.employee.email
+        ) {
+          throw new Error("Please complete all employee details.");
+        }
 
-        // Step 1: Get presigned URL from existing Lambda
-        const response = await axios({
-          method: 'GET',
-          url: API_ENDPOINT
-        });
+        if (!this.selectedFile) {
+          throw new Error("Please select an ID card photo.");
+        }
 
-        const { uploadURL, photoFilename } = response.data;
+        // Step 1: Request S3 presigned URL
+        const urlResponse = await axios.get(API_ENDPOINT);
+
+        const { uploadURL, photoFilename } = urlResponse.data;
 
         if (!uploadURL || !photoFilename) {
-          throw new Error('Could not get S3 upload URL.');
+          throw new Error("Could not generate S3 upload URL.");
         }
 
-        // Step 2: Convert image to binary
-        let binary = atob(this.image.split(',')[1]);
-        let array = [];
-
-        for (let i = 0; i < binary.length; i++) {
-          array.push(binary.charCodeAt(i));
-        }
-
-        let blobData = new Blob(
-          [new Uint8Array(array)],
-          { type: 'image/jpeg' }
-        );
-
-        // Step 3: Upload image directly to S3
-        const result = await fetch(uploadURL, {
-          method: 'PUT',
-          body: blobData
+        // Step 2: Upload image directly to S3
+        const uploadResponse = await fetch(uploadURL, {
+          method: "PUT",
+          body: this.selectedFile,
+          headers: {
+            "Content-Type": "image/jpeg"
+          }
         });
 
-        if (!result.ok) {
-          throw new Error('S3 image upload failed.');
+        if (!uploadResponse.ok) {
+          throw new Error("Could not upload ID card to S3.");
         }
 
-        // Store the S3 filename for DynamoDB
-        this.photoFilename = photoFilename;
-        this.imageUploaded = true;
-
-        this.successMessage = 'Image uploaded successfully!';
-
-      } catch (error) {
-        console.error('Image upload error:', error);
-        this.errorMessage =
-          error.message || 'Image upload failed.';
-
-      } finally {
-        this.isUploading = false;
-      }
-    },
-
-    // Save employee details in DynamoDB
-    async registerEmployee() {
-      try {
-        this.isSubmitting = true;
-        this.errorMessage = '';
-        this.successMessage = '';
-
-        // Validate employee details
-        if (
-          !this.employee.name.trim() ||
-          !this.employee.phoneNumber.trim() ||
-          !this.employee.email.trim() ||
-          !this.employee.employeeCode.trim()
-        ) {
-          throw new Error('Please complete all employee details.');
-        }
-
-        if (!this.imageUploaded || !this.photoFilename) {
-          throw new Error('Please upload the ID card first.');
-        }
-
-        // Prepare employee information
+        // Step 3: Save employee details
         const employeeData = {
-          name: this.employee.name.trim(),
-          phoneNumber: this.employee.phoneNumber.trim(),
-          email: this.employee.email.trim(),
-          employeeCode: this.employee.employeeCode.trim(),
-          photoFilename: this.photoFilename
+          name: this.employee.name,
+          phoneNumber: this.employee.phoneNumber,
+          email: this.employee.email,
+          photoFilename: photoFilename
         };
 
-        // Send details to API Gateway
         const response = await axios.post(
           EMPLOYEE_API_ENDPOINT,
           employeeData,
           {
             headers: {
-              'Content-Type': 'application/json'
+              "Content-Type": "application/json"
             }
           }
         );
 
-        this.successMessage =
-          response.data.message;
+        // Step 4: Display generated employee code
+        this.employee.employeeCode = response.data.employeeCode;
 
-        console.log('Registration response:', response.data);
+        this.successMessage =
+          `Employee registered successfully! Employee Code: ${response.data.employeeCode}`;
+
+        // Clear form fields after successful registration
+        this.employee.name = "";
+        this.employee.phoneNumber = "";
+        this.employee.email = "";
+        this.selectedFile = null;
+        this.image = "";
 
       } catch (error) {
-        console.error('Registration error:', error);
+        console.error("Registration error:", error);
 
         this.errorMessage =
           error.response?.data?.message ||
           error.message ||
-          'Employee registration failed.';
+          "Employee registration failed.";
 
       } finally {
         this.isSubmitting = false;
       }
+    }
+  },
+
+  beforeUnmount() {
+    if (this.image) {
+      URL.revokeObjectURL(this.image);
     }
   }
 };
 </script>
 
 <style scoped>
-body {
-  background: #20262E;
-  padding: 20px;
-  font-family: sans-serif;
-}
-
 #app {
-  background: #fff;
-  border-radius: 4px;
-  padding: 20px;
-  text-align: center;
+  min-height: 100vh;
+  background: #f4f6f9;
+  padding: 40px 15px;
+  font-family: Arial, sans-serif;
 }
 
-.employee-form {
-  margin: 20px auto;
+.registration-card {
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 30px;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+}
+
+h1 {
+  text-align: center;
+  font-size: 25px;
+  margin-bottom: 25px;
+  color: #263b55;
+}
+
+.form-group {
+  margin-bottom: 18px;
+}
+
+label {
+  display: block;
+  margin-bottom: 7px;
+  font-weight: 600;
+  color: #333;
 }
 
 input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 11px;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+  font-size: 14px;
+}
+
+input[readonly] {
+  background: #f0f2f5;
+  color: #555;
+}
+
+small {
   display: block;
-  width: 80%;
-  max-width: 400px;
-  padding: 10px;
-  margin: 10px auto;
+  margin-top: 5px;
+  color: #777;
+}
+
+.preview {
+  display: block;
+  max-width: 180px;
+  max-height: 180px;
+  margin-top: 12px;
+  border-radius: 5px;
+  object-fit: contain;
 }
 
 button {
-  padding: 10px 20px;
-  margin: 10px;
+  width: 100%;
+  padding: 13px;
+  border: none;
+  border-radius: 5px;
+  background: #263b55;
+  color: white;
+  font-size: 16px;
   cursor: pointer;
 }
 
 button:disabled {
-  cursor: not-allowed;
   opacity: 0.6;
-}
-
-img {
-  width: 30%;
-  margin: auto;
-  display: block;
-  margin-bottom: 10px;
+  cursor: not-allowed;
 }
 
 .success {
-  color: green;
+  color: #16803c;
+  text-align: center;
+  margin-top: 18px;
 }
 
 .error {
-  color: red;
+  color: #c62828;
+  text-align: center;
+  margin-top: 18px;
+}
+
+@media (max-width: 480px) {
+  .registration-card {
+    padding: 20px;
+  }
 }
 </style>
