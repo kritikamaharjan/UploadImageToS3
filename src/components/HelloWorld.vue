@@ -1,95 +1,287 @@
+
 <template>
- <div id="app">
+  <div id="app">
     <h1>Employee Registration Application</h1>
 
-    <div v-if="!image">
-      <h2>Select an image</h2>
-      <input type="file" @change="onFileChange">
+    <!-- Employee details -->
+    <div class="employee-form">
+      <h2>Employee Details</h2>
+
+      <input
+        v-model="employee.name"
+        type="text"
+        placeholder="Employee Name"
+        required
+      />
+
+      <input
+        v-model="employee.phoneNumber"
+        type="tel"
+        placeholder="Phone Number"
+        required
+      />
+
+      <input
+        v-model="employee.email"
+        type="email"
+        placeholder="Email Address"
+        required
+      />
+
+      <input
+        v-model="employee.employeeCode"
+        type="text"
+        placeholder="Employee Code"
+        required
+      />
     </div>
+
+    <!-- Image selection -->
+    <div v-if="!image">
+      <h2>Upload ID Card</h2>
+      <input type="file" accept="image/jpeg" @change="onFileChange">
+    </div>
+
+    <!-- Image preview -->
     <div v-else>
       <img :src="image" />
-      <button v-if="!uploadURL" @click="removeImage">Remove image</button>
-      <button v-if="!uploadURL" @click="uploadImage">Upload image</button>
+
+      <button
+        v-if="!imageUploaded"
+        @click="removeImage"
+      >
+        Remove image
+      </button>
+
+      <button
+        v-if="!imageUploaded"
+        @click="uploadImage"
+        :disabled="isUploading"
+      >
+        {{ isUploading ? "Uploading..." : "Upload ID Card" }}
+      </button>
     </div>
-    <h2 v-if="uploadURL">Success! Image uploaded to bucket.</h2>
-</div>
 
+    <p v-if="imageUploaded">
+      ID card uploaded successfully to S3!
+    </p>
 
+    <!-- Register employee -->
+    <button
+      v-if="imageUploaded"
+      @click="registerEmployee"
+      :disabled="isSubmitting"
+    >
+      {{ isSubmitting ? "Registering..." : "Register Employee" }}
+    </button>
+
+    <p v-if="successMessage" class="success">
+      {{ successMessage }}
+    </p>
+
+    <p v-if="errorMessage" class="error">
+      {{ errorMessage }}
+    </p>
+  </div>
 </template>
 
 <script>
-//import Vue from 'vue/dist/vue.js';
 import axios from "axios";
 
-const MAX_IMAGE_SIZE = 1000000
+const MAX_IMAGE_SIZE = 1000000;
 
-/* ENTER YOUR ENDPOINT HERE
-   FILES UPLOADED TO MY ENDPOINT ARE AUTOMATICALLY DELETED EVERY FEW HOURS */
+// Existing API: Generates S3 presigned URL
+const API_ENDPOINT =
+  'https://74ie1wykx4.execute-api.us-east-1.amazonaws.com/default/lambda1';
 
-const API_ENDPOINT = 'https://74ie1wykx4.execute-api.us-east-1.amazonaws.com/default/lambda1'
+// New API: Saves employee details in DynamoDB
+const EMPLOYEE_API_ENDPOINT =
+  'https://24vukuy57c.execute-api.us-east-1.amazonaws.com/prod/employees';
 
 export default {
   name: 'app',
-    data () {
-      return {
-        image: '',
-        uploadURL: ''
+
+  data() {
+    return {
+      image: '',
+      imageUploaded: false,
+      photoFilename: '',
+
+      isUploading: false,
+      isSubmitting: false,
+
+      successMessage: '',
+      errorMessage: '',
+
+      employee: {
+        name: '',
+        phoneNumber: '',
+        email: '',
+        employeeCode: ''
       }
-    },
+    };
+  },
+
   methods: {
-    onFileChange (e) {
-      let files = e.target.files || e.dataTransfer.files
-      if (!files.length) return
-      this.createImage(files[0])
+
+    // Select an image
+    onFileChange(e) {
+      let files = e.target.files || e.dataTransfer.files;
+
+      if (!files.length) return;
+
+      this.createImage(files[0]);
     },
-    createImage (file) {
-      // var image = new Image()
-      let reader = new FileReader()
+
+    // Preview and validate image
+    createImage(file) {
+      if (file.type !== 'image/jpeg') {
+        return alert('JPG images only.');
+      }
+
+      if (file.size > MAX_IMAGE_SIZE) {
+        return alert('Image must be less than 1 MB.');
+      }
+
+      let reader = new FileReader();
+
       reader.onload = (e) => {
-        console.log('length: ', e.target.result.includes('data:image/jpeg'))
-        if (!e.target.result.includes('data:image/jpeg')) {
-          return alert('Wrong file type - JPG only.')
-        }
-        if (e.target.result.length > MAX_IMAGE_SIZE) {
-          return alert('Image is loo large - 1Mb maximum')
-        }
-        this.image = e.target.result
-      }
-      reader.readAsDataURL(file)
+        this.image = e.target.result;
+        this.imageUploaded = false;
+        this.photoFilename = '';
+        this.successMessage = '';
+        this.errorMessage = '';
+      };
+
+      reader.readAsDataURL(file);
     },
-    removeImage: function (e) {
-      console.log('Remove clicked', e)
-      this.image = ''
+
+    // Remove selected image
+    removeImage() {
+      this.image = '';
+      this.imageUploaded = false;
+      this.photoFilename = '';
     },
-    uploadImage: async function (e) {
-      console.log('Upload clicked', e)
-      // Get the presigned URL
-      const response = await axios({
-        method: 'GET',
-        url: API_ENDPOINT
-      })
-      console.log('Response: ', response.data)
-      console.log('Uploading: ', this.image)
-      let binary = atob(this.image.split(',')[1])
-      let array = []
-      for (var i = 0; i < binary.length; i++) {
-        array.push(binary.charCodeAt(i))
+
+    // Upload image to S3
+    async uploadImage() {
+      try {
+        this.isUploading = true;
+        this.errorMessage = '';
+
+        // Step 1: Get presigned URL from existing Lambda
+        const response = await axios({
+          method: 'GET',
+          url: API_ENDPOINT
+        });
+
+        const { uploadURL, photoFilename } = response.data;
+
+        if (!uploadURL || !photoFilename) {
+          throw new Error('Could not get S3 upload URL.');
+        }
+
+        // Step 2: Convert image to binary
+        let binary = atob(this.image.split(',')[1]);
+        let array = [];
+
+        for (let i = 0; i < binary.length; i++) {
+          array.push(binary.charCodeAt(i));
+        }
+
+        let blobData = new Blob(
+          [new Uint8Array(array)],
+          { type: 'image/jpeg' }
+        );
+
+        // Step 3: Upload image directly to S3
+        const result = await fetch(uploadURL, {
+          method: 'PUT',
+          body: blobData
+        });
+
+        if (!result.ok) {
+          throw new Error('S3 image upload failed.');
+        }
+
+        // Store the S3 filename for DynamoDB
+        this.photoFilename = photoFilename;
+        this.imageUploaded = true;
+
+        this.successMessage = 'Image uploaded successfully!';
+
+      } catch (error) {
+        console.error('Image upload error:', error);
+        this.errorMessage =
+          error.message || 'Image upload failed.';
+
+      } finally {
+        this.isUploading = false;
       }
-      let blobData = new Blob([new Uint8Array(array)], {type: 'image/jpeg'})
-      console.log('Uploading to: ', response.data.uploadURL)
-      const result = await fetch(response.data.uploadURL, {
-        method: 'PUT',
-        body: blobData
-      })
-      console.log('Result: ', result)
-      // Final URL for the user doesn't need the query string params
-      this.uploadURL = response.data.uploadURL.split('?')[0]
+    },
+
+    // Save employee details in DynamoDB
+    async registerEmployee() {
+      try {
+        this.isSubmitting = true;
+        this.errorMessage = '';
+        this.successMessage = '';
+
+        // Validate employee details
+        if (
+          !this.employee.name.trim() ||
+          !this.employee.phoneNumber.trim() ||
+          !this.employee.email.trim() ||
+          !this.employee.employeeCode.trim()
+        ) {
+          throw new Error('Please complete all employee details.');
+        }
+
+        if (!this.imageUploaded || !this.photoFilename) {
+          throw new Error('Please upload the ID card first.');
+        }
+
+        // Prepare employee information
+        const employeeData = {
+          name: this.employee.name.trim(),
+          phoneNumber: this.employee.phoneNumber.trim(),
+          email: this.employee.email.trim(),
+          employeeCode: this.employee.employeeCode.trim(),
+          photoFilename: this.photoFilename
+        };
+
+        // Send details to API Gateway
+        const response = await axios.post(
+          EMPLOYEE_API_ENDPOINT,
+          employeeData,
+          {
+            headers: {
+              'Content-Type': 'application/json'
+            }
+          }
+        );
+
+        this.successMessage =
+          response.data.message;
+
+        console.log('Registration response:', response.data);
+
+      } catch (error) {
+        console.error('Registration error:', error);
+
+        this.errorMessage =
+          error.response?.data?.message ||
+          error.message ||
+          'Employee registration failed.';
+
+      } finally {
+        this.isSubmitting = false;
+      }
     }
   }
-}
+};
 </script>
 
-<!-- Add "scoped" attribute to limit CSS to this component only -->
 <style scoped>
 body {
   background: #20262E;
@@ -101,30 +293,44 @@ body {
   background: #fff;
   border-radius: 4px;
   padding: 20px;
-  transition: all 0.2s;
   text-align: center;
 }
 
-#logo {
-  width: 100px;
+.employee-form {
+  margin: 20px auto;
 }
 
-h2 {
-  font-weight: bold;
-  margin-bottom: 15px;
+input {
+  display: block;
+  width: 80%;
+  max-width: 400px;
+  padding: 10px;
+  margin: 10px auto;
 }
 
-h1, h2 {
-  font-weight: normal;
-  margin-bottom: 15px;
+button {
+  padding: 10px 20px;
+  margin: 10px;
+  cursor: pointer;
 }
-a {
-  color: #42b983;
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
 }
+
 img {
   width: 30%;
   margin: auto;
   display: block;
   margin-bottom: 10px;
+}
+
+.success {
+  color: green;
+}
+
+.error {
+  color: red;
 }
 </style>
